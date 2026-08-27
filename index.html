@@ -133,6 +133,12 @@
     animation:breathe 4.2s ease-in-out infinite;
     transform-origin:50% 100%;
   }
+  #vrmCanvas{
+    position:absolute;
+    inset:0;
+    width:100% !important;
+    height:100% !important;
+  }
   @keyframes breathe{
     0%,100%{transform:translateY(0) scale(1);}
     50%{transform:translateY(-3px) scale(1.012);}
@@ -153,6 +159,15 @@
     text-align:center;
   }
   .stage-status.speaking{color:var(--amber);}
+  .stage-hint{
+    margin-top:2px;
+    font-size:10px;
+    color:#5e7268;
+    text-align:center;
+    max-width:230px;
+  }
+  .stage-hint.hide{display:none;}
+  #vrmCanvas{display:block;}
 
   .stage-controls{
     margin-top:18px;
@@ -350,7 +365,7 @@
 <main>
   <section class="stage">
     <div class="window">
-      <div class="avatar-wrap">
+      <div class="avatar-wrap" id="avatarWrap">
         <svg id="avatar" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
           <ellipse cx="100" cy="205" rx="55" ry="10" fill="#0d1712" opacity=".4"/>
           <path d="M40 220 C40 150 45 95 100 95 C155 95 160 150 160 220 Z" fill="#3A5C61"/>
@@ -370,8 +385,10 @@
           <path id="mouth" class="mouth" d="M88 96 Q100 100 112 96" stroke="#7A4A34" stroke-width="3" fill="none" stroke-linecap="round"/>
         </svg>
       </div>
+      <canvas id="vrmCanvas" style="display:none; width:100%; height:100%;"></canvas>
     </div>
     <div class="stage-status mono" id="stageStatus">教室で待っている…</div>
+    <div class="stage-hint mono" id="vrmHint">avatar.vrm を同じフォルダに置くと、かわいい3Dアバターに切り替わるよ</div>
 
     <div class="stage-controls">
       <button class="ctl primary" id="qrBtn">QRを見せる(記憶で再会)</button>
@@ -547,6 +564,7 @@ function finishSpeaking(){
   stageStatus.classList.remove("speaking");
 }
 function animateTalking(on){
+  if(window.vrmSetSpeaking) window.vrmSetSpeaking(on); // 3Dアバターがあればそちらを動かす
   clearInterval(talkTimer);
   if(!on){
     mouth.setAttribute("d", "M88 96 Q100 100 112 96");
@@ -744,6 +762,149 @@ micBtn.addEventListener("click", () => {
 updateModeBadge();
 renderMemoryPanel();
 greet();
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@2.1.1/lib/three-vrm.module.js"
+  }
+}
+</script>
+<script type="module">
+/* =========================================================
+   任意の3Dかわいいアバター読み込み(VRM形式)
+   ./avatar.vrm が同じフォルダにあれば自動で読み込んで表示する。
+   なければ何もせず、上のSVGキャラクターのままになる(フォールバック)。
+
+   VRMファイルの入手方法(例):
+   - VRoid Hub (https://hub.vroid.com) で「商用利用可」「改変可」の
+     アバターを探してダウンロードし、avatar.vrm という名前で保存
+   - VRoid公式サンプルモデル A/B/C(CC0または準CC0で提供)も利用可
+   このコード自体はどのVRMファイルにも対応する汎用ローダーです。
+   ========================================================= */
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+
+const canvas = document.getElementById("vrmCanvas");
+const svgWrap = document.getElementById("avatarWrap");
+const hint = document.getElementById("vrmHint");
+
+async function vrmAvailable(url){
+  try{
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    return res.ok;
+  }catch(e){ return false; }
+}
+
+async function initVRM(){
+  const url = "./avatar.vrm";
+  const ok = await vrmAvailable(url);
+  if(!ok) return; // avatar.vrmが無ければ何もせずSVGのまま
+
+  const parent = canvas.parentElement;
+  const w = parent.clientWidth, h = parent.clientHeight;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(28, w / h, 0.1, 20);
+  camera.position.set(0, 1.38, 1.15); // バストアップ想定
+
+  scene.add(new THREE.AmbientLight(0xfff2d8, 1.15));
+  const key = new THREE.DirectionalLight(0xffe9b8, 1.0);
+  key.position.set(0.6, 1.6, 1.2);
+  scene.add(key);
+
+  const loader = new GLTFLoader();
+  loader.register((parser) => new VRMLoaderPlugin(parser));
+
+  let vrm = null;
+  try{
+    const gltf = await loader.loadAsync(url);
+    vrm = gltf.userData.vrm;
+    VRMUtils.removeUnnecessaryVertices(gltf.scene);
+    VRMUtils.combineSkeletons(gltf.scene);
+    vrm.scene.rotation.y = Math.PI; // VRMは正面がZ+背中向きなことがあるため反転
+    scene.add(vrm.scene);
+
+    // カメラを頭の高さに合わせる(モデルの身長差を吸収)
+    const head = vrm.humanoid?.getNormalizedBoneNode("head");
+    if(head){
+      const headWorldY = head.getWorldPosition(new THREE.Vector3()).y;
+      camera.position.y = headWorldY + 0.02;
+      camera.lookAt(0, headWorldY - 0.05, 0);
+    }
+  }catch(err){
+    console.warn("VRMの読み込みに失敗しました。SVGアバターのままにします。", err);
+    return;
+  }
+
+  // 読み込み成功 → 見た目を切り替え
+  svgWrap.style.display = "none";
+  canvas.style.display = "block";
+  hint.classList.add("hide");
+
+  let speaking = false;
+  window.vrmSetSpeaking = (on) => { speaking = on; };
+
+  const clock = new THREE.Clock();
+  let blinkTimer = 0, nextBlinkAt = 2 + Math.random() * 3;
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    const t = clock.getElapsedTime();
+
+    // 呼吸(頭・胸をゆっくり上下させる)
+    if(vrm){
+      vrm.scene.position.y = Math.sin(t * 1.1) * 0.006;
+      vrm.scene.rotation.z = Math.sin(t * 0.7) * 0.01;
+
+      const em = vrm.expressionManager;
+      if(em){
+        // まばたき
+        blinkTimer += dt;
+        if(blinkTimer > nextBlinkAt){
+          blinkTimer = 0;
+          nextBlinkAt = 2.2 + Math.random() * 3.2;
+          quickBlink(em);
+        }
+        // 発話中は口(あ)を揺らす、待機中は閉じる
+        const mouthTarget = speaking ? (0.35 + 0.35 * Math.abs(Math.sin(t * 9))) : 0;
+        em.setValue("aa", mouthTarget);
+      }
+      vrm.update(dt);
+    }
+    renderer.render(scene, camera);
+  }
+  let blinking = false;
+  function quickBlink(em){
+    if(blinking) return;
+    blinking = true;
+    let p = 0;
+    const iv = setInterval(() => {
+      p += 0.25;
+      const v = p <= 1 ? p : Math.max(0, 2 - p);
+      em.setValue("blink", v);
+      if(p >= 2){ clearInterval(iv); em.setValue("blink", 0); blinking = false; }
+    }, 16);
+  }
+  animate();
+
+  window.addEventListener("resize", () => {
+    const nw = parent.clientWidth, nh = parent.clientHeight;
+    renderer.setSize(nw, nh);
+    camera.aspect = nw / nh;
+    camera.updateProjectionMatrix();
+  });
+}
+
+initVRM();
 </script>
 </body>
 </html>
