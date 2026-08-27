@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>探究教室の住人 — AIキャラクター デモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#EFE8D8;
+    --ink-dim:#B9B2A0;
+    --paper:#F0E9D8;
+    --paper-line:#DCD2B8;
+    --board:#1F2E27;
+    --board-deep:#182420;
+    --board-soft:#28382F;
+    --amber:#D4A73A;
+    --amber-soft:#8C7433;
+    --teal:#4F7C82;
+    --teal-soft:#3A5C61;
+    --rust:#A85C3B;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at 20% -10%, #2A3C33 0%, transparent 55%),
+      var(--board);
+    color:var(--ink);
+    font-family:"Zen Kaku Gothic New", sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+  .mono{font-family:"JetBrains Mono", monospace; letter-spacing:.02em;}
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:16px 22px;
+    border-bottom:1px solid #33453B;
+    background:linear-gradient(180deg, var(--board-soft), var(--board));
+  }
+  .lamp{
+    width:12px;height:12px;border-radius:50%;
+    background:var(--amber);
+    box-shadow:0 0 10px 3px rgba(212,167,58,.65);
+    animation:pulse 3.2s ease-in-out infinite;
+    flex:none;
+  }
+  @keyframes pulse{
+    0%,100%{opacity:1; box-shadow:0 0 8px 2px rgba(212,167,58,.55);}
+    50%{opacity:.55; box-shadow:0 0 14px 5px rgba(212,167,58,.35);}
+  }
+  header h1{
+    font-family:"Zen Maru Gothic", sans-serif;
+    font-size:16px;
+    font-weight:700;
+    margin:0;
+    color:var(--ink);
+  }
+  header .sub{
+    font-size:11px;
+    color:var(--ink-dim);
+    margin-top:2px;
+  }
+  header .modebadge{
+    margin-left:auto;
+    font-size:11px;
+    padding:5px 10px;
+    border-radius:999px;
+    border:1px solid var(--teal-soft);
+    color:var(--teal);
+    white-space:nowrap;
+  }
+  header .modebadge.on{
+    border-color:var(--amber-soft);
+    color:var(--amber);
+  }
+
+  /* ---------- Layout ---------- */
+  main{
+    flex:1;
+    display:grid;
+    grid-template-columns:340px 1fr;
+    gap:0;
+    min-height:0;
+  }
+  @media (max-width:820px){
+    main{grid-template-columns:1fr; grid-template-rows:auto 1fr;}
+  }
+
+  /* ---------- Stage (avatar) ---------- */
+  .stage{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    padding:26px 18px 18px;
+    border-right:1px solid #33453B;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(212,167,58,.10), transparent 60%),
+      var(--board-deep);
+  }
+  .window{
+    position:relative;
+    width:210px; height:150px;
+    margin-bottom:6px;
+    border-radius:10px;
+    background:linear-gradient(180deg,#4A6E63 0%, #2E4438 100%);
+    box-shadow:inset 0 0 0 6px #142019, inset 0 0 30px rgba(0,0,0,.35);
+    overflow:hidden;
+  }
+  .window::before{
+    content:"";
+    position:absolute; inset:0;
+    background:
+      linear-gradient(90deg, transparent 49%, #142019 49%, #142019 51%, transparent 51%),
+      linear-gradient(0deg, transparent 49%, #142019 49%, #142019 51%, transparent 51%);
+    opacity:.6;
+  }
+  .avatar-wrap{
+    width:100%;
+    display:flex;
+    justify-content:center;
+    animation:breathe 4.2s ease-in-out infinite;
+    transform-origin:50% 100%;
+  }
+  @keyframes breathe{
+    0%,100%{transform:translateY(0) scale(1);}
+    50%{transform:translateY(-3px) scale(1.012);}
+  }
+  svg#avatar{width:190px; height:auto; display:block;}
+  .eye{transform-origin:center; animation:blink 5.6s infinite;}
+  .eye.right{animation-delay:.05s;}
+  @keyframes blink{
+    0%,92%,100%{transform:scaleY(1);}
+    95%{transform:scaleY(0.08);}
+  }
+  .mouth{transition:d .12s ease;}
+  .stage-status{
+    margin-top:14px;
+    font-size:12px;
+    color:var(--ink-dim);
+    min-height:16px;
+    text-align:center;
+  }
+  .stage-status.speaking{color:var(--amber);}
+
+  .stage-controls{
+    margin-top:18px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    justify-content:center;
+  }
+  .ctl{
+    font-family:inherit;
+    font-size:11.5px;
+    padding:7px 11px;
+    border-radius:999px;
+    border:1px solid #3D5148;
+    background:#233229;
+    color:var(--ink);
+    cursor:pointer;
+    transition:.15s;
+  }
+  .ctl:hover{border-color:var(--teal); color:var(--teal);}
+  .ctl.primary{border-color:var(--amber-soft); color:var(--amber);}
+  .ctl.primary:hover{background:rgba(212,167,58,.12);}
+  .ctl.danger:hover{border-color:var(--rust); color:var(--rust);}
+  .ctl[disabled]{opacity:.35; cursor:not-allowed;}
+
+  .memory-panel{
+    margin-top:16px;
+    width:100%;
+    max-width:280px;
+    background:#1A2620;
+    border:1px solid #33453B;
+    border-radius:var(--radius);
+    padding:12px 14px;
+    font-size:12px;
+    display:none;
+  }
+  .memory-panel.show{display:block;}
+  .memory-panel h3{
+    margin:0 0 8px;
+    font-size:11px;
+    letter-spacing:.06em;
+    color:var(--ink-dim);
+    font-weight:600;
+    text-transform:uppercase;
+  }
+  .memory-panel dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:4px 10px;}
+  .memory-panel dt{color:var(--ink-dim);}
+  .memory-panel dd{margin:0; color:var(--ink);}
+  .memory-empty{color:var(--ink-dim); font-style:normal;}
+
+  /* ---------- Notebook (chat) ---------- */
+  .notebook{
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    background:var(--paper);
+    color:#2A2420;
+  }
+  .changelog{
+    display:flex;
+    align-items:center;
+    gap:0;
+    padding:14px 18px 10px;
+    overflow-x:auto;
+    border-bottom:1px dashed var(--paper-line);
+    flex:none;
+  }
+  .changelog .cl-label{
+    font-size:10.5px;
+    color:#8a8066;
+    margin-right:12px;
+    white-space:nowrap;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .cl-item{
+    display:flex;
+    align-items:center;
+    white-space:nowrap;
+    flex:none;
+  }
+  .cl-dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--rust);
+    margin-right:6px;
+    flex:none;
+  }
+  .cl-item:first-of-type .cl-dot{background:var(--teal);}
+  .cl-text{font-size:12px; color:#4a4130;}
+  .cl-arrow{margin:0 10px; color:#c2b795;}
+
+  .log{
+    flex:1;
+    overflow-y:auto;
+    padding:18px 22px;
+    background-image:repeating-linear-gradient(
+      to bottom, transparent, transparent 30px, var(--paper-line) 31px
+    );
+    background-position:0 6px;
+  }
+  .bubble{
+    max-width:78%;
+    margin-bottom:16px;
+    padding:9px 13px;
+    border-radius:10px;
+    font-size:14px;
+    line-height:1.65;
+    position:relative;
+  }
+  .bubble.ai{
+    background:#FFFDF6;
+    border:1px solid var(--paper-line);
+    box-shadow:1px 2px 0 rgba(0,0,0,.03);
+  }
+  .bubble.ai .who{
+    display:block;
+    font-family:"Zen Maru Gothic", sans-serif;
+    font-size:10.5px;
+    color:var(--teal-soft);
+    margin-bottom:3px;
+    font-weight:700;
+  }
+  .bubble.student{
+    margin-left:auto;
+    background:var(--amber);
+    color:#2A2010;
+    border-radius:10px 10px 2px 10px;
+  }
+  .bubble.system{
+    margin:10px auto;
+    max-width:90%;
+    text-align:center;
+    background:none;
+    border:1px dashed #c2b795;
+    color:#7a6f52;
+    font-size:12px;
+  }
+
+  form#chatForm{
+    display:flex;
+    gap:8px;
+    padding:14px 18px;
+    border-top:1px solid var(--paper-line);
+    background:#EAE2CC;
+    flex:none;
+  }
+  #chatInput{
+    flex:1;
+    font-family:inherit;
+    font-size:14px;
+    padding:11px 14px;
+    border-radius:999px;
+    border:1px solid #cfc4a0;
+    background:#FFFDF6;
+    color:#2A2420;
+  }
+  #chatInput:focus{outline:2px solid var(--teal); outline-offset:1px;}
+  .roundbtn{
+    font-family:inherit;
+    width:42px;height:42px;
+    border-radius:50%;
+    border:1px solid #cfc4a0;
+    background:#FFFDF6;
+    cursor:pointer;
+    font-size:15px;
+    flex:none;
+  }
+  .roundbtn.send{background:var(--teal); color:#fff; border-color:var(--teal-soft);}
+  .roundbtn.mic.active{background:var(--rust); color:#fff; border-color:var(--rust);}
+  .roundbtn[disabled]{opacity:.4; cursor:not-allowed;}
+
+  footer.note{
+    padding:8px 18px;
+    font-size:11px;
+    color:#8a8066;
+    background:#EAE2CC;
+    border-top:1px solid var(--paper-line);
+  }
+
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:#3D5148; border-radius:4px;}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="lamp" title="在室ランプ"></span>
+  <div>
+    <h1>探究教室の住人</h1>
+    <div class="sub mono">Inquiry Room Companion — Prototype Demo</div>
+  </div>
+  <span class="modebadge mono" id="modeBadge">記憶を使わずに話す</span>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="window">
+      <div class="avatar-wrap">
+        <svg id="avatar" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="100" cy="205" rx="55" ry="10" fill="#0d1712" opacity=".4"/>
+          <path d="M40 220 C40 150 45 95 100 95 C155 95 160 150 160 220 Z" fill="#3A5C61"/>
+          <path d="M40 220 C40 150 45 95 100 95 C155 95 160 150 160 220 Z" fill="none" stroke="#2A4448" stroke-width="2"/>
+          <circle cx="100" cy="72" r="46" fill="#F2D4A8"/>
+          <path d="M54 60 Q100 18 146 60 Q150 20 100 14 Q50 20 54 60 Z" fill="#4A3423"/>
+          <path d="M56 46 Q60 78 52 96 Q40 60 56 46 Z" fill="#4A3423"/>
+          <path d="M144 46 Q140 78 148 96 Q160 60 144 46 Z" fill="#4A3423"/>
+          <g id="eyeL">
+            <ellipse class="eye left" cx="82" cy="72" rx="6" ry="7" fill="#2A2018"/>
+          </g>
+          <g id="eyeR">
+            <ellipse class="eye right" cx="118" cy="72" rx="6" ry="7" fill="#2A2018"/>
+          </g>
+          <ellipse cx="70" cy="88" rx="8" ry="4" fill="#E8A97E" opacity=".55"/>
+          <ellipse cx="130" cy="88" rx="8" ry="4" fill="#E8A97E" opacity=".55"/>
+          <path id="mouth" class="mouth" d="M88 96 Q100 100 112 96" stroke="#7A4A34" stroke-width="3" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+    <div class="stage-status mono" id="stageStatus">教室で待っている…</div>
+
+    <div class="stage-controls">
+      <button class="ctl primary" id="qrBtn">QRを見せる(記憶で再会)</button>
+      <button class="ctl" id="anonBtn">記憶を使わず話す</button>
+      <button class="ctl" id="memBtn">記憶を確認する</button>
+      <button class="ctl danger" id="forgetBtn">記憶を削除する</button>
+      <button class="ctl danger" id="endBtn">対話を終了する</button>
+      <button class="ctl" id="voiceBtn">🔊 音声：ON</button>
+    </div>
+
+    <div class="memory-panel" id="memoryPanel">
+      <h3>いまAIが覚えていること</h3>
+      <dl id="memoryList"></dl>
+    </div>
+  </section>
+
+  <section class="notebook">
+    <div class="changelog" id="changelog">
+      <span class="cl-label mono">変化ログ</span>
+      <span class="cl-item"><span class="cl-dot"></span><span class="cl-text mono">まだ記録なし</span></span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <form id="chatForm">
+      <input id="chatInput" type="text" placeholder="話しかけてみる…" autocomplete="off">
+      <button type="button" class="roundbtn mic" id="micBtn" title="音声入力">🎤</button>
+      <button type="submit" class="roundbtn send" id="sendBtn" title="送る">➤</button>
+    </form>
+    <footer class="note">
+      これはプロトタイプ・デモです。応答は簡易的なルールベースの台本で動いており、実運用のAI応答ではありません。
+    </footer>
+  </section>
+</main>
+
+<script>
+/* =========================================================
+   探究教室AIキャラクター — フロントエンド・プロトタイプ
+   実際のLLM/RAG/QR認証/記憶DBは接続していません。
+   研究構想の「関係形成の型」を体験するための台本ベース実装です。
+   ========================================================= */
+
+const CLASSROOM_RESOURCES = [
+  "地域の観光パンフレット棚",
+  "先輩たちが作った観光マップの実物",
+  "地域の商店街を取材したインタビュー記録",
+  "図書コーナーにある郷土資料",
+  "先生が作った探究の進め方シート"
+];
+
+const state = {
+  mode: "anon", // 'anon' | 'remembered'
+  ended: false,
+  voiceOn: true,
+  memory: null, // filled when QR pressed
+  turn: 0,
+  changelog: []
+};
+
+// ---- 「前回の記憶」のデモ用サンプル(本来は本人の対話から生成される) ----
+function sampleMemory(){
+  return {
+    name: "きみ",
+    theme: "地域のお祭りと観光",
+    lastTried: "観光パンフレットを比べてみる",
+    lastNote: "地域を盛り上げたい、という関心から始まった",
+    nextStep: null,
+    history: ["地域のお祭りと観光について調べたい、と話していた"]
+  };
+}
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const logEl = $("log"), inputEl = $("chatInput"), formEl = $("chatForm");
+const modeBadge = $("modeBadge"), stageStatus = $("stageStatus");
+const memoryPanel = $("memoryPanel"), memoryList = $("memoryList");
+const changelogEl = $("changelog");
+const mouth = $("mouth");
+const voiceBtn = $("voiceBtn"), micBtn = $("micBtn");
+
+function addBubble(text, who){
+  const div = document.createElement("div");
+  div.className = "bubble " + who;
+  if(who === "ai"){
+    div.innerHTML = `<span class="who">探究教室の住人</span>${escapeHtml(text)}`;
+  } else if(who === "system"){
+    div.textContent = text;
+  } else {
+    div.textContent = text;
+  }
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function escapeHtml(s){
+  return s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+}
+
+function updateModeBadge(){
+  if(state.mode === "remembered"){
+    modeBadge.textContent = "記憶を使って再会中";
+    modeBadge.classList.add("on");
+  } else {
+    modeBadge.textContent = "記憶を使わずに話す";
+    modeBadge.classList.remove("on");
+  }
+}
+
+function renderMemoryPanel(){
+  if(!state.memory){
+    memoryList.innerHTML = `<dt class="memory-empty">状態</dt><dd class="memory-empty">記憶なし(匿名対話)</dd>`;
+    return;
+  }
+  const m = state.memory;
+  memoryList.innerHTML = `
+    <dt>呼び名</dt><dd>${escapeHtml(m.name)}</dd>
+    <dt>探究テーマ</dt><dd>${escapeHtml(m.theme || "未設定")}</dd>
+    <dt>試した活動</dt><dd>${escapeHtml(m.lastTried || "まだなし")}</dd>
+    <dt>次の一歩</dt><dd>${escapeHtml(m.nextStep || "未設定")}</dd>
+  `;
+}
+
+function addChangelog(label){
+  state.changelog.push(label);
+  const items = changelogEl.querySelectorAll(".cl-item");
+  // rebuild
+  changelogEl.innerHTML = `<span class="cl-label mono">変化ログ</span>`;
+  if(state.changelog.length === 0){
+    changelogEl.innerHTML += `<span class="cl-item"><span class="cl-dot"></span><span class="cl-text mono">まだ記録なし</span></span>`;
+    return;
+  }
+  state.changelog.forEach((t, i) => {
+    if(i > 0){
+      const arrow = document.createElement("span");
+      arrow.className = "cl-arrow";
+      arrow.textContent = "→";
+      changelogEl.appendChild(arrow);
+    }
+    const item = document.createElement("span");
+    item.className = "cl-item";
+    item.innerHTML = `<span class="cl-dot"></span><span class="cl-text mono">${escapeHtml(t)}</span>`;
+    changelogEl.appendChild(item);
+  });
+  changelogEl.scrollLeft = changelogEl.scrollWidth;
+}
+
+// ---------- 発話(見た目のアニメーション + 音声) ----------
+let talkTimer = null;
+function speak(text){
+  stageStatus.textContent = "話している…";
+  stageStatus.classList.add("speaking");
+  animateTalking(true);
+
+  if(state.voiceOn && "speechSynthesis" in window){
+    try{
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ja-JP";
+      u.rate = 1.0;
+      u.pitch = 1.05;
+      u.onend = () => finishSpeaking();
+      u.onerror = () => finishSpeaking();
+      window.speechSynthesis.speak(u);
+      return;
+    }catch(e){ /* フォールバックへ */ }
+  }
+  // 音声合成が使えない場合は文字数に応じた擬似タイマー
+  const ms = Math.min(4200, Math.max(900, text.length * 55));
+  setTimeout(finishSpeaking, ms);
+}
+function finishSpeaking(){
+  animateTalking(false);
+  stageStatus.textContent = "教室で待っている…";
+  stageStatus.classList.remove("speaking");
+}
+function animateTalking(on){
+  clearInterval(talkTimer);
+  if(!on){
+    mouth.setAttribute("d", "M88 96 Q100 100 112 96");
+    return;
+  }
+  let open = false;
+  talkTimer = setInterval(() => {
+    open = !open;
+    mouth.setAttribute("d", open
+      ? "M86 95 Q100 108 114 95 Q100 102 86 95"
+      : "M88 96 Q100 100 112 96");
+  }, 130);
+}
+
+// ---------- 会話エンジン(台本ベース) ----------
+function aiSay(text, {changelog} = {}){
+  addBubble(text, "ai");
+  speak(text);
+  if(changelog) addChangelog(changelog);
+}
+function systemSay(text){ addBubble(text, "system"); }
+
+function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+function greet(){
+  logEl.innerHTML = "";
+  if(state.mode === "remembered" && state.memory){
+    aiSay(`前に、${state.memory.theme}について調べたいと話していたと思うけど、合っている？`);
+  } else {
+    aiSay("いらっしゃい。ここは探究教室だよ。今日はどんなことが気になってる？");
+  }
+}
+
+function handleStudentTurn(text){
+  state.turn++;
+  const t = text.trim();
+  if(!t) return;
+  addBubble(t, "student");
+
+  if(state.mode === "remembered" && state.memory){
+    handleRememberedTurn(t);
+  } else {
+    handleAnonTurn(t);
+  }
+}
+
+function handleAnonTurn(t){
+  if(state.turn === 1){
+    state.memory = state.memory || { name:"きみ", theme:t, lastTried:null, nextStep:null, history:[] };
+    if(state.mode === "anon"){
+      // 匿名のままだが、テーマだけはその場の会話用に一時保持
+      window.__tempTheme = t;
+    }
+    aiSay(`「${t}」なんだね。まだ漠然としていても大丈夫だよ。何から気になった？`, {changelog:"出会い"});
+    return;
+  }
+  if(state.turn === 2){
+    aiSay(`なるほど。もしよかったら、教室にある${pick(CLASSROOM_RESOURCES)}を見てみる？ 実物があると、考えが具体的になることが多いよ。`, {changelog:"資源への接続"});
+    return;
+  }
+  aiSay("いいね、それも面白そう。今日はここまでにする？ もし続きをまた話したいなら、次はQRを見せて記憶を使うこともできるよ。", {changelog:"次の一歩"});
+}
+
+function handleRememberedTurn(t){
+  const m = state.memory;
+  // ステージ0: 前回の確認への返事待ち
+  if(!m._confirmed){
+    if(/違う|いや|ちがう/.test(t)){
+      aiSay("そうなんだね、教えてくれてありがとう。今のテーマを教えてもらえる？");
+      m._askingNewTheme = true;
+      m._confirmed = true;
+      return;
+    }
+    m._confirmed = true;
+    aiSay(`この前は、${m.lastTried}と言っていたね。やってみた？`, {changelog:"前回の確認"});
+    return;
+  }
+  if(m._askingNewTheme){
+    m.theme = t;
+    m._askingNewTheme = false;
+    aiSay(`「${t}」に変わったんだね。前のテーマから、どうしてそっちが気になったの？`, {changelog:"テーマの更新"});
+    return;
+  }
+  // ステージ1: 試したことへの返答 → 変化を言語化
+  if(!m._triedReported){
+    m._triedReported = true;
+    m.lastTried = t;
+    aiSay(`検索するだけでなく、実際に「${t}」をやってみたことが、今回進んだところだと思うよ。見る立場が増えた感じがする。`, {changelog:"変化の言語化"});
+    return;
+  }
+  // ステージ2: 資源への接続
+  if(!m._resourceOffered){
+    m._resourceOffered = true;
+    aiSay(`もしよければ、教室にある${pick(CLASSROOM_RESOURCES)}も見てみない？ 今の話とつながるところがあると思う。`, {changelog:"資源への接続"});
+    return;
+  }
+  // ステージ3: 次の一歩の自己決定
+  if(!m.nextStep){
+    m.nextStep = t;
+    aiSay(`「${t}」を次に試すんだね。それ、次に会うときに聞かせてね。`, {changelog:"次の一歩"});
+    renderMemoryPanel();
+    return;
+  }
+  aiSay("うん、いいと思う。今日はここまでにする？ 続きはまた今度、QRを見せて再開できるよ。");
+}
+
+// ---------- ボタン操作 ----------
+$("qrBtn").addEventListener("click", () => {
+  if(state.ended) return;
+  state.mode = "remembered";
+  state.memory = sampleMemory();
+  state.turn = 0;
+  state.changelog = [];
+  updateModeBadge();
+  renderMemoryPanel();
+  systemSay("QRコードを提示しました。前回の記憶を呼び出します。(デモ用のサンプル記憶を使用)");
+  greet();
+});
+
+$("anonBtn").addEventListener("click", () => {
+  if(state.ended) return;
+  state.mode = "anon";
+  state.memory = null;
+  state.turn = 0;
+  state.changelog = [];
+  updateModeBadge();
+  renderMemoryPanel();
+  systemSay("記憶を使わずに、匿名の対話を始めます。");
+  greet();
+});
+
+$("memBtn").addEventListener("click", () => {
+  memoryPanel.classList.toggle("show");
+  renderMemoryPanel();
+});
+
+$("forgetBtn").addEventListener("click", () => {
+  state.memory = null;
+  state.mode = "anon";
+  state.turn = 0;
+  state.changelog = [];
+  updateModeBadge();
+  renderMemoryPanel();
+  addChangelog("記憶を削除");
+  systemSay("記憶を削除しました。次に来たときは、はじめましてから話します。");
+});
+
+$("endBtn").addEventListener("click", () => {
+  state.ended = true;
+  inputEl.disabled = true;
+  $("sendBtn").disabled = true;
+  aiSay("今日はここまでにしよう。また来てくれると嬉しいな。");
+  ["qrBtn","anonBtn"].forEach(id => $(id).disabled = true);
+});
+
+voiceBtn.addEventListener("click", () => {
+  state.voiceOn = !state.voiceOn;
+  voiceBtn.textContent = state.voiceOn ? "🔊 音声：ON" : "🔈 音声：OFF";
+  if(!state.voiceOn && "speechSynthesis" in window) window.speechSynthesis.cancel();
+});
+
+formEl.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if(state.ended) return;
+  const val = inputEl.value;
+  if(!val.trim()) return;
+  inputEl.value = "";
+  handleStudentTurn(val);
+});
+
+// ---------- 音声入力(対応ブラウザのみ) ----------
+let recognizing = false, recognizer = null;
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(SR){
+  recognizer = new SR();
+  recognizer.lang = "ja-JP";
+  recognizer.interimResults = false;
+  recognizer.onresult = (ev) => {
+    const text = ev.results[0][0].transcript;
+    inputEl.value = text;
+  };
+  recognizer.onend = () => { recognizing = false; micBtn.classList.remove("active"); };
+} else {
+  micBtn.title = "この端末/ブラウザは音声入力に対応していません";
+}
+micBtn.addEventListener("click", () => {
+  if(!recognizer || state.ended) return;
+  if(recognizing){ recognizer.stop(); return; }
+  recognizing = true;
+  micBtn.classList.add("active");
+  recognizer.start();
+});
+
+// ---------- 初期化 ----------
+updateModeBadge();
+renderMemoryPanel();
+greet();
+</script>
+</body>
+</html>
